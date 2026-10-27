@@ -1,10 +1,69 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-labelledby="title desc">
-  <title id="title">Profile lifecycle diagram placeholder</title>
-  <desc id="desc">Placeholder frame for the unpdf profile lifecycle diagram.</desc>
-  <rect width="960" height="540" fill="#f5f0e6"/>
-  <rect x="24" y="24" width="912" height="492" rx="18" fill="#fffdf8" stroke="#d8d0c0" stroke-width="2"/>
-  <rect x="48" y="48" width="864" height="444" rx="12" fill="none" stroke="#bdb3a1" stroke-width="2" stroke-dasharray="10 10"/>
-  <text x="72" y="88" fill="#a8532f" font-family="ui-monospace, Consolas, monospace" font-size="14" font-weight="700" letter-spacing="3">PLACEHOLDER</text>
-  <text x="480" y="264" text-anchor="middle" fill="#1d2b2a" font-family="Georgia, serif" font-size="34" font-weight="700">Profile lifecycle</text>
-  <text x="480" y="300" text-anchor="middle" fill="#5d6b68" font-family="system-ui, sans-serif" font-size="16">Diagram content pending</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" width="960" height="540" role="img" aria-labelledby="life-title life-desc">
+  <title id="life-title">Profile lifecycle and its gates</title>
+  <desc id="life-desc">Six stages stacked top to bottom: draft, approved, annotated, published, current, cached. Each step down has a gate: a reviewed overlay plus a score of at least 0.90, then human approval, then family and match metadata, then a matching SHA-256 with a catalog row and current pointer, then a pull. A dashed line between published and current marks the frozen edge, where build ends and run begins. Each stage also names where it lives.</desc>
+
+  <rect width="960" height="540" fill="#fffdf8"></rect>
+
+  <text x="60" y="40" font-family="ui-monospace, Consolas, monospace" font-size="10.5" letter-spacing="2" fill="#a8532f">BUILD — A MODEL AND A PERSON</text>
+  <text x="930" y="40" text-anchor="end" font-family="ui-monospace, Consolas, monospace" font-size="10.5" letter-spacing="2" fill="#5d6b68">WHERE IT LIVES</text>
+
+  <rect x="60" y="62" width="300" height="52" rx="8" fill="#fffdf8" stroke="#a8532f" stroke-dasharray="5 4"></rect>
+  <text x="74" y="82" font-family="ui-monospace, Consolas, monospace" font-size="9" fill="#a8532f">01</text>
+  <text x="104" y="84" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#1d2b2a">Draft</text>
+  <text x="74" y="102" font-family="system-ui, sans-serif" font-size="9.5" fill="#5d6b68">a proposal, with telemetry</text>
+
+  <rect x="60" y="140" width="300" height="52" rx="8" fill="#dcefeb" stroke="#0f6b62"></rect>
+  <text x="74" y="160" font-family="ui-monospace, Consolas, monospace" font-size="9" fill="#0f6b62">02</text>
+  <text x="104" y="162" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#1d2b2a">Approved</text>
+  <text x="74" y="180" font-family="system-ui, sans-serif" font-size="9.5" fill="#5d6b68">telemetry stripped, flag set</text>
+
+  <rect x="60" y="218" width="300" height="52" rx="8" fill="#dcefeb" stroke="#0f6b62"></rect>
+  <text x="74" y="238" font-family="ui-monospace, Consolas, monospace" font-size="9" fill="#0f6b62">03</text>
+  <text x="104" y="240" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#1d2b2a">Annotated</text>
+  <text x="74" y="258" font-family="system-ui, sans-serif" font-size="9.5" fill="#5d6b68">family and match rule added</text>
+
+  <rect x="60" y="296" width="300" height="52" rx="8" fill="#f1e4d4" stroke="#a8532f"></rect>
+  <text x="74" y="316" font-family="ui-monospace, Consolas, monospace" font-size="9" fill="#a8532f">04</text>
+  <text x="104" y="318" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#1d2b2a">Published</text>
+  <text x="74" y="336" font-family="system-ui, sans-serif" font-size="9.5" fill="#5d6b68">immutable bytes, one version</text>
+
+  <rect x="60" y="374" width="300" height="52" rx="8" fill="#f5f0e6" stroke="#d8d0c0"></rect>
+  <text x="74" y="394" font-family="ui-monospace, Consolas, monospace" font-size="9" fill="#a8532f">05</text>
+  <text x="104" y="396" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#1d2b2a">Current</text>
+  <text x="74" y="414" font-family="system-ui, sans-serif" font-size="9.5" fill="#5d6b68">a pointer, not a copy</text>
+
+  <rect x="60" y="452" width="300" height="52" rx="8" fill="#dcefeb" stroke="#0f6b62"></rect>
+  <text x="74" y="472" font-family="ui-monospace, Consolas, monospace" font-size="9" fill="#0f6b62">06</text>
+  <text x="104" y="474" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#1d2b2a">Cached</text>
+  <text x="74" y="492" font-family="system-ui, sans-serif" font-size="9.5" fill="#5d6b68">one version on this machine</text>
+
+  <line x1="210" y1="114" x2="210" y2="132" stroke="#5d6b68" stroke-width="1.4"></line>
+  <path d="M 210 140 L 205 132 L 215 132 Z" fill="#5d6b68"></path>
+  <line x1="210" y1="192" x2="210" y2="210" stroke="#5d6b68" stroke-width="1.4"></line>
+  <path d="M 210 218 L 205 210 L 215 210 Z" fill="#5d6b68"></path>
+  <line x1="210" y1="270" x2="210" y2="288" stroke="#5d6b68" stroke-width="1.4"></line>
+  <path d="M 210 296 L 205 288 L 215 288 Z" fill="#5d6b68"></path>
+  <line x1="210" y1="348" x2="210" y2="366" stroke="#5d6b68" stroke-width="1.4"></line>
+  <path d="M 210 374 L 205 366 L 215 366 Z" fill="#5d6b68"></path>
+  <line x1="210" y1="426" x2="210" y2="444" stroke="#5d6b68" stroke-width="1.4"></line>
+  <path d="M 210 452 L 205 444 L 215 444 Z" fill="#5d6b68"></path>
+
+  <text x="420" y="131" font-family="ui-monospace, Consolas, monospace" font-size="9.5" fill="#a8532f">overlay reviewed · score ≥ 0.90 · page count unchanged</text>
+  <text x="420" y="209" font-family="ui-monospace, Consolas, monospace" font-size="9.5" fill="#0f6b62">a person approves · approved: true</text>
+  <text x="420" y="287" font-family="ui-monospace, Consolas, monospace" font-size="9.5" fill="#5d6b68">family + match · a standalone type skips this</text>
+  <text x="420" y="357" font-family="ui-monospace, Consolas, monospace" font-size="9.5" fill="#a8532f">SHA-256 matched · catalog row · current pointer</text>
+  <text x="420" y="443" font-family="ui-monospace, Consolas, monospace" font-size="9.5" fill="#0f6b62">pull · one version per name</text>
+
+  <line x1="60" y1="370" x2="930" y2="370" stroke="#a8532f" stroke-width="1.4" stroke-dasharray="8 6" opacity="0.7"></line>
+  <rect x="742" y="362" width="188" height="16" fill="#fffdf8"></rect>
+  <text x="930" y="374" text-anchor="end" font-family="ui-monospace, Consolas, monospace" font-size="9.5" letter-spacing="1.2" fill="#a8532f">FROZEN EDGE · RUN BELOW</text>
+
+  <text x="930" y="84" text-anchor="end" font-family="ui-monospace, Consolas, monospace" font-size="9" fill="#5d6b68">build/</text>
+  <text x="930" y="162" text-anchor="end" font-family="ui-monospace, Consolas, monospace" font-size="9" fill="#5d6b68">profiles/&lt;name&gt;/</text>
+  <text x="930" y="240" text-anchor="end" font-family="ui-monospace, Consolas, monospace" font-size="9" fill="#5d6b68">profiles/&lt;name&gt;/</text>
+  <text x="930" y="318" text-anchor="end" font-family="ui-monospace, Consolas, monospace" font-size="9" fill="#5d6b68">KV artifact + D1 row</text>
+  <text x="930" y="396" text-anchor="end" font-family="ui-monospace, Consolas, monospace" font-size="9" fill="#5d6b68">current_profiles</text>
+  <text x="930" y="474" text-anchor="end" font-family="ui-monospace, Consolas, monospace" font-size="9" fill="#5d6b68">cache/&lt;name&gt;/&lt;version&gt;/</text>
+
+  <text x="60" y="526" font-family="system-ui, sans-serif" font-size="10" fill="#5d6b68">A failed gate stops the profile there. A published version is never rewritten. Rollback moves the pointer and touches no artifact.</text>
 </svg>

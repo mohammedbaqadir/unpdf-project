@@ -4,7 +4,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light">
-    <meta name="description" content="Architecture and design documentation for unpdf.">
+    <meta
+      name="description"
+      content="Why unpdf is built the way it is: one approved contract per document type, a deterministic extractor, and a private registry."
+    >
     <link rel="license" href="https://creativecommons.org/licenses/by/4.0/">
     <title>unpdf — architecture and design</title>
     <link rel="stylesheet" href="styles.css">
@@ -17,11 +20,13 @@
         <a class="brand" href="#overview">unpdf</a>
         <nav class="site-nav" aria-label="Documentation sections">
           <a href="#architecture">Architecture</a>
+          <a href="#profile">Profile</a>
           <a href="#lifecycle">Lifecycle</a>
-          <a href="#registry">Registry</a>
           <a href="#extraction">Extraction</a>
-          <a href="#decisions">Decisions</a>
+          <a href="#results">Results</a>
           <a href="#security">Security</a>
+          <a href="#failures">Failures</a>
+          <a href="#decisions">Decisions</a>
           <a href="#operations">Operations</a>
         </nav>
       </div>
@@ -32,154 +37,743 @@
         <p class="eyebrow">Documentation</p>
         <h1 id="overview-title">unpdf</h1>
         <p class="lede">
-          Architecture and design notes for the extractor, the profiler, and the
-          private profile registry.
+          A profile is an approved contract about a page. Building it spends the
+          ambiguity once: a model proposes, a person checks the boxes. Running it is
+          deterministic — it either finds what the contract promised or refuses the
+          file.
         </p>
-        <p class="status">Draft structure — content pending.</p>
-      </section>
-
-      <section id="repositories" class="section" aria-labelledby="repositories-title">
-        <div class="section-head">
-          <p class="eyebrow">01</p>
-          <h2 id="repositories-title">Repositories</h2>
-        </div>
-        <div class="section-body">
-          <p class="placeholder">Content pending.</p>
-        </div>
+        <p class="chips">
+          <span class="chip">profile schema 3</span>
+          <span class="chip">database schema 4</span>
+          <span class="chip">no runtime model</span>
+        </p>
+        <p class="epigraph">
+          Extraction is deterministic and runs on this machine. No model is called.
+          The network is used only to download a profile that is not already local or
+          cached.
+        </p>
+        <p class="aside">
+          The READMEs are the how-to. This page is the why: the shape of the system,
+          the rules that hold it together, and what breaks when they do not.
+        </p>
       </section>
 
       <section id="architecture" class="section" aria-labelledby="architecture-title">
         <div class="section-head">
-          <p class="eyebrow">02</p>
-          <h2 id="architecture-title">Architecture</h2>
+          <p class="eyebrow">01</p>
+          <h2 id="architecture-title">Two machines, one frozen edge</h2>
         </div>
         <div class="section-body">
+          <p class="claim">
+            The expensive ambiguity lives on the build side. Only a frozen file
+            crosses to the run side.
+          </p>
+          <p>
+            Three artefacts form the system. The
+            <strong>extractor</strong> is public and deterministic: PDFs go in,
+            SQLite comes out. The <strong>profiler</strong> is private and runs a
+            vision model over sample pages to draft a contract. The
+            <strong>registry</strong> is a private Cloudflare Worker that stores
+            approved contracts and hands them out.
+          </p>
+
           <figure class="diagram">
             <img
               src="assets/architecture.svg"
-              alt="Placeholder for the unpdf system architecture diagram"
+              alt="Two zones separated by a dashed boundary. This machine holds the extractor, the profiler, PDFs, and the database; Cloudflare holds the Worker, D1, and KV. Only approved profile bytes cross the boundary, plus page renders sent to DeepSeek during build."
               width="960"
               height="540"
             >
-            <figcaption>System context and component boundaries.</figcaption>
+            <figcaption>
+              No PDF, database, or extracted value crosses the boundary. The empty
+              space is the security design.
+            </figcaption>
           </figure>
-          <p class="placeholder">Content pending.</p>
+
+          <div class="table-wrap">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th scope="col">Artefact</th>
+                  <th scope="col">Lives</th>
+                  <th scope="col">May contain</th>
+                  <th scope="col">Must never contain</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Extractor</td>
+                  <td>Public repository, this machine</td>
+                  <td>Code, profiles, local databases</td>
+                  <td>Registry URL, tokens, profile data</td>
+                </tr>
+                <tr>
+                  <td>Profiler</td>
+                  <td>Private repository, operator machine</td>
+                  <td>Drafts, build output, Worker code</td>
+                  <td>Production PDFs; only sample renders reach the model</td>
+                </tr>
+                <tr>
+                  <td>Profile</td>
+                  <td>Local folder, cache, KV</td>
+                  <td>Page geometry, boxes, field rules</td>
+                  <td>The document itself, extracted values</td>
+                </tr>
+                <tr>
+                  <td>Registry</td>
+                  <td>Cloudflare</td>
+                  <td>Approved bytes, metadata, token hashes</td>
+                  <td>PDFs, databases, customer data</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>
+            The dependency points one way: the profiler imports the public extractor
+            library, never the reverse. That keeps the public package free of
+            build-only code and of anything the profiler knows.
+          </p>
+          <p>
+            The same contract is validated twice, by two implementations. The Python
+            loader checks structure <em>and</em> field kinds and modes. The Worker
+            checks structure only: schema version, approval, name, page block, boxes,
+            duplicates. A hand-published profile with a bogus kind is accepted by the
+            registry and rejected by every extractor when it loads.
+          </p>
+          <div class="note">
+            <strong>Two schema numbers.</strong> A profile declares
+            <code>schema_version: 3</code>. The database it fills reports schema
+            <code>4</code> in <code>_meta</code>. They move independently.
+          </div>
+        </div>
+      </section>
+
+      <section id="profile" class="section" aria-labelledby="profile-title">
+        <div class="section-head">
+          <p class="eyebrow">02</p>
+          <h2 id="profile-title">A page of claims</h2>
+        </div>
+        <div class="section-body">
+          <p class="claim">
+            Everything the extractor knows about a document type is one JSON file:
+            where the page is, what must be printed on it, and where each value sits.
+          </p>
+
+          <figure class="anatomy">
+            <svg viewBox="0 0 760 300" role="img" aria-labelledby="anatomy-title anatomy-desc">
+              <title id="anatomy-title">Profile anatomy</title>
+              <desc id="anatomy-desc">
+                A page with two rust anchor boxes and four teal field boxes. A legend
+                explains that an anchor states text the page must contain and a field
+                states where a value is read.
+              </desc>
+              <rect x="24" y="18" width="440" height="256" rx="10" fill="#f5f0e6" stroke="#d8d0c0"></rect>
+              <text x="34" y="14" font-family="ui-monospace, Consolas, monospace" font-size="10" fill="#5d6b68">page 1 · 595 × 842 pt</text>
+              <text x="30" y="34" font-family="ui-monospace, Consolas, monospace" font-size="9" fill="#5d6b68">0</text>
+              <text x="448" y="34" font-family="ui-monospace, Consolas, monospace" font-size="9" fill="#5d6b68">1</text>
+              <rect x="58" y="44" width="196" height="28" rx="4" fill="none" stroke="#a8532f" stroke-width="1.5" stroke-dasharray="5 4"></rect>
+              <text x="66" y="62" font-family="ui-monospace, Consolas, monospace" font-size="10" fill="#a8532f">anchor · title tokens</text>
+              <rect x="58" y="236" width="150" height="26" rx="4" fill="none" stroke="#a8532f" stroke-width="1.5" stroke-dasharray="5 4"></rect>
+              <text x="66" y="253" font-family="ui-monospace, Consolas, monospace" font-size="10" fill="#a8532f">anchor · footer</text>
+              <rect x="58" y="104" width="170" height="30" rx="4" fill="#dcefeb" stroke="#0f6b62"></rect>
+              <text x="66" y="123" font-family="ui-monospace, Consolas, monospace" font-size="10" fill="#0f6b62">reference</text>
+              <rect x="58" y="150" width="120" height="30" rx="4" fill="#dcefeb" stroke="#0f6b62"></rect>
+              <text x="66" y="169" font-family="ui-monospace, Consolas, monospace" font-size="10" fill="#0f6b62">date</text>
+              <rect x="250" y="104" width="150" height="30" rx="4" fill="#dcefeb" stroke="#0f6b62"></rect>
+              <text x="258" y="123" font-family="ui-monospace, Consolas, monospace" font-size="10" fill="#0f6b62">seller</text>
+              <rect x="250" y="150" width="150" height="30" rx="4" fill="#dcefeb" stroke="#0f6b62"></rect>
+              <text x="258" y="169" font-family="ui-monospace, Consolas, monospace" font-size="10" fill="#0f6b62">total</text>
+              <text x="500" y="60" font-family="Georgia, serif" font-size="15" fill="#1d2b2a">What the boxes mean</text>
+              <rect x="500" y="80" width="18" height="12" fill="none" stroke="#a8532f" stroke-width="1.5" stroke-dasharray="5 4"></rect>
+              <text x="528" y="91" font-family="system-ui, sans-serif" font-size="11.5" fill="#1d2b2a">anchor — the page must say this here</text>
+              <rect x="500" y="112" width="18" height="12" fill="#dcefeb" stroke="#0f6b62"></rect>
+              <text x="528" y="123" font-family="system-ui, sans-serif" font-size="11.5" fill="#1d2b2a">field — the value lives here</text>
+              <text x="500" y="164" font-family="system-ui, sans-serif" font-size="11.5" fill="#5d6b68">Every box is normalized: 0..1</text>
+              <text x="500" y="184" font-family="system-ui, sans-serif" font-size="11.5" fill="#5d6b68">on both axes, left &lt; right,</text>
+              <text x="500" y="204" font-family="system-ui, sans-serif" font-size="11.5" fill="#5d6b68">top &lt; bottom.</text>
+              <text x="500" y="240" font-family="system-ui, sans-serif" font-size="11.5" fill="#5d6b68">Anchors are mandatory.</text>
+              <text x="500" y="260" font-family="system-ui, sans-serif" font-size="11.5" fill="#5d6b68">Optional applies to fields only.</text>
+            </svg>
+            <figcaption>
+              Anchors prove the document is the type the profile describes. Fields
+              decide where words are read.
+            </figcaption>
+          </figure>
+
+          <p>
+            An anchor is a promise about content: these tokens are printed inside
+            this box on this page. Every anchor in a profile is enforced — there is no
+            optional anchor. A field is a read location: words whose centre falls
+            inside the box, checked against the field kind.
+          </p>
+
+          <div class="table-wrap">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th scope="col">Rule</th>
+                  <th scope="col">Limit</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>Pages</td><td>1 to 100</td></tr>
+                <tr><td>Anchors</td><td>At most 200, unique ids, every one enforced</td></tr>
+                <tr><td>Fields</td><td>At most 500, names unique across the profile</td></tr>
+                <tr><td>Page tolerance</td><td>0 to 0.5 relative to width and height; default 0.02</td></tr>
+                <tr><td>Boxes</td><td>Four numbers in 0..1, left &lt; right, top &lt; bottom</td></tr>
+                <tr><td>Kinds</td><td><code>text</code>, <code>digits</code>, <code>number</code>, <code>decimal</code>, <code>integer</code>, <code>date</code></td></tr>
+                <tr><td>Modes</td><td><code>line</code>, <code>multi</code>, <code>all</code></td></tr>
+                <tr><td>Published size</td><td>At most 2,000,000 characters of JSON</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <pre><code>{
+  "schema_version": 3,
+  "name": "example-form",
+  "approved": true,
+  "version": "1.0.0",
+  "page": { "count": 1, "width": 595, "height": 842, "tolerance": 0.02 },
+  "anchors": [
+    { "id": "title", "page": 1, "box": [0.08, 0.04, 0.6, 0.08], "tokens": ["Example", "Form"] }
+  ],
+  "fields": [
+    { "name": "reference", "page": 1, "box": [0.08, 0.16, 0.4, 0.2], "kind": "text" }
+  ]
+}</code></pre>
+
+          <p>
+            Routing metadata is written by the profiler, not by hand:
+            <code>family</code> groups related profiles, and
+            <code>match</code> names one field plus the values that select this
+            member.
+          </p>
+          <p>
+            The extractor selects a profile <em>by name</em> and never accepts a
+            path. It reads <code>profiles/&lt;name&gt;/profile.json</code> from the
+            working folder or <code>UNPDF_PROFILES</code>, then the registry cache.
+            Unknown keys are ignored on load, so a profile published under an older
+            schema shape still runs.
+          </p>
+          <div class="note">
+            <strong>The approval switch.</strong> A profile whose
+            <code>approved</code> flag is not <code>true</code> is refused at load
+            with exit 4. The flag is the only thing between a draft and production,
+            and it is an ordinary boolean in a file.
+          </div>
         </div>
       </section>
 
       <section id="lifecycle" class="section" aria-labelledby="lifecycle-title">
         <div class="section-head">
           <p class="eyebrow">03</p>
-          <h2 id="lifecycle-title">Profile lifecycle</h2>
+          <h2 id="lifecycle-title">From samples to a frozen version</h2>
         </div>
         <div class="section-body">
+          <p class="claim">
+            A profile becomes real when a person looks at the boxes. After that it can
+            never change under the same version.
+          </p>
+
           <figure class="diagram">
             <img
               src="assets/profile-lifecycle.svg"
-              alt="Placeholder for the profile lifecycle diagram"
+              alt="Six stages stacked from top to bottom: draft, approved, annotated, published, current, cached. Each step down has a gate: a reviewed overlay and a quality score of at least 0.90, a person approving, family and match metadata, a matching SHA-256 with a catalog row and current pointer, then a pull. A dashed line between published and current marks the frozen edge, where build ends and run begins."
               width="960"
               height="540"
             >
-            <figcaption>Build, approve, publish, pull, and extract.</figcaption>
+            <figcaption>
+              Every edge is a gate. A gate that fails stops the profile there; it does
+              not skip ahead.
+            </figcaption>
           </figure>
-          <p class="placeholder">Content pending.</p>
-        </div>
-      </section>
 
-      <section id="registry" class="section" aria-labelledby="registry-title">
-        <div class="section-head">
-          <p class="eyebrow">04</p>
-          <h2 id="registry-title">Registry</h2>
-        </div>
-        <div class="section-body">
-          <p class="placeholder">Content pending.</p>
+          <ol class="steps">
+            <li>
+              <strong>build</strong>
+              Renders the sample pages, sends them to DeepSeek for structure, then
+              snaps every proposed box onto the words of the local text layer. The
+              model proposes; local geometry decides. Output: <code>profile.draft.json</code>,
+              <code>overlay.html</code>, the rendered pages, and every raw model
+              response.
+            </li>
+            <li>
+              <strong>approve</strong>
+              Refuses a draft with semantic failures or a score below its threshold.
+              Requires the page count to match the sample, drops the
+              <code>quality</code> telemetry, and sets <code>approved: true</code>.
+            </li>
+            <li>
+              <strong>annotate</strong>
+              Adds the family and the match rule. A standalone document type needs no
+              family and can skip this.
+            </li>
+            <li>
+              <strong>publish</strong>
+              Uploads the exact bytes and makes that version current. The registry
+              re-validates the JSON, stores the artifact in KV, records the row in D1,
+              and returns a SHA-256 the profiler compares with its own.
+            </li>
+          </ol>
+
+          <p>
+            The build side spends more effort than the run side ever will. Up to five
+            samples go to the model by default, and a field or anchor must appear in
+            at least 60% of them to survive consensus. The approved score is a
+            weighted sum: 0.50 required coverage, 0.20 contract coverage, 0.20 type
+            checks, 0.10 optional coverage, against a 0.90 threshold.
+          </p>
+          <p>
+            Two sharp edges are worth knowing. The threshold travels inside the
+            draft, so a draft that carries its own <code>quality.threshold</code> is
+            judged by that number, not by the profiler's default. And a draft with no
+            <code>quality</code> block at all approves without any score check.
+          </p>
+
+          <p>
+            Publishing is immutable per <code>(name, version)</code>. Repeating the
+            same bytes is a no-op; different bytes under the same version are
+            rejected. <code>rollback</code> moves the current pointer and touches no
+            published artifact. <code>bump</code> changes the local version and
+            nothing else.
+          </p>
+          <p>
+            Clients keep the profile they already have until their next pull, and a
+            pull keeps exactly one version per name. That removes the question "which
+            profile produced this database?" — the snapshot in <code>.unpdf</code>
+            answers it either way.
+          </p>
+          <div class="note">
+            <strong>The registry is optional.</strong> A local
+            <code>profiles/&lt;name&gt;/profile.json</code> runs with no credentials
+            at all. The registry exists for distribution, not for execution.
+          </div>
         </div>
       </section>
 
       <section id="extraction" class="section" aria-labelledby="extraction-title">
         <div class="section-head">
-          <p class="eyebrow">05</p>
-          <h2 id="extraction-title">Extraction</h2>
+          <p class="eyebrow">04</p>
+          <h2 id="extraction-title">One PDF, ordered refusals</h2>
         </div>
         <div class="section-body">
+          <p class="claim">
+            Each step either confirms what the contract promised or records why it
+            cannot. Nothing is guessed.
+          </p>
+
           <figure class="diagram">
             <img
               src="assets/extraction-flow.svg"
-              alt="Placeholder for the extraction and family routing diagram"
+              alt="A vertical sequence: read words, check page count, page size, anchors, match rule, and exactly one contract, then extract fields. Side exits record quarantine, failure, or a skipped duplicate. The stored path ends in the database and evidence folder."
               width="960"
               height="540"
             >
-            <figcaption>Type selection, family routing, and quarantine.</figcaption>
+            <figcaption>
+              First failure wins and is recorded once. Quarantine is a record, not an
+              exception.
+            </figcaption>
           </figure>
-          <p class="placeholder">Content pending.</p>
+
+          <ol class="steps">
+            <li>
+              <strong>read words</strong>
+              Use the text layer. A page with almost no text but with images falls
+              back to local Tesseract: 300 DPI, <code>ara+eng</code>, confidence at
+              least 40, 180 seconds per page. Missing Tesseract fails that file, not
+              the run.
+            </li>
+            <li>
+              <strong>check the contract</strong>
+              Page count, then page size within the profile's relative tolerance,
+              then every anchor: the tokens must appear inside the anchor box. Token
+              matching tolerates a three-character substring, for OCR edges.
+            </li>
+            <li>
+              <strong>route</strong>
+              For a family, the PDF is read once and each member's contract and
+              <code>match</code> rule are tried. Exactly one member must match. Zero
+              or two matches is a quarantine with a different reason for each.
+            </li>
+            <li>
+              <strong>extract and validate</strong>
+              Words whose centre falls inside a field box are grouped into lines,
+              read in the right direction, and joined according to the field mode.
+              The value is then checked against its kind.
+            </li>
+          </ol>
+
+          <p>
+            File names never route anything. A family member is chosen by page
+            geometry, anchor tokens, and the value of the match field — not by what
+            the file is called.
+          </p>
+          <p>
+            The batch is built to survive itself. Duplicate file names are rejected
+            before any PDF is opened. Identical content already in the database is
+            skipped by hash. A PDF that cannot be read, or that matches nothing, is
+            recorded and the next file continues.
+          </p>
         </div>
       </section>
 
-      <section id="decisions" class="section" aria-labelledby="decisions-title">
+      <section id="results" class="section" aria-labelledby="results-title">
         <div class="section-head">
-          <p class="eyebrow">06</p>
-          <h2 id="decisions-title">Design decisions</h2>
+          <p class="eyebrow">05</p>
+          <h2 id="results-title">What the database proves</h2>
         </div>
         <div class="section-body">
-          <p class="placeholder">Content pending.</p>
+          <p class="claim">
+            Rows are stored with their evidence, and a document that failed is
+            recorded rather than silently dropped.
+          </p>
+
+          <div class="table-wrap">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th scope="col">Table</th>
+                  <th scope="col">Holds</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><code>docs</code></td><td>One row per stored document: format, file name, SHA-256, counters</td></tr>
+                <tr><td><code>extracted_fields</code></td><td>One row per field: value, page, box, method</td></tr>
+                <tr><td><code>_field_status</code></td><td>One row per field: accepted, review, or missing, with a reason</td></tr>
+                <tr><td><code>quarantine</code></td><td>One row per rejected document: reason, page, details</td></tr>
+                <tr><td><code>review</code></td><td>A view of every flagged field, joined to its file name</td></tr>
+                <tr><td><code>_meta</code></td><td>Tool version, database schema, profile version and fingerprint</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>
+            Alongside the database sits <code>.unpdf/</code>: a snapshot of the
+            contracts used, the words and extracted fields for every accepted
+            document, and one JSON file per quarantine. Both the database and the
+            evidence folder default to the PDF folder and must resolve outside the
+            tool's own folder.
+          </p>
+
+          <div class="table-wrap">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th scope="col">Status</th>
+                  <th scope="col">Meaning</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><code>accepted</code></td><td>Present and passed its kind check</td></tr>
+                <tr><td><code>review</code></td><td>Present but failed a check, or a required field is empty</td></tr>
+                <tr><td><code>missing</code></td><td>Absent; optional, or genuinely blank</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>
+            <code>check</code> re-runs the field rules against stored values. It
+            opens no PDF, writes no evidence, and only touches documents belonging to
+            the selected job. Nothing is re-extracted when a profile changes — the
+            database keeps what it has, and a fingerprint warning says so.
+          </p>
+          <div class="note">
+            <strong>Counts are database-wide.</strong> Review and quarantine totals
+            cover the whole job, not the current run. An old quarantined file keeps
+            exit 4 until it is resolved, even on a run that adds nothing new.
+          </div>
+          <p class="small">
+            Two columns exist and are never written: <code>docs.ocr</code> and
+            <code>extracted_fields.confidence</code>. Treat them as reserved, not as
+            data.
+          </p>
         </div>
       </section>
 
       <section id="security" class="section" aria-labelledby="security-title">
         <div class="section-head">
-          <p class="eyebrow">07</p>
-          <h2 id="security-title">Security</h2>
+          <p class="eyebrow">06</p>
+          <h2 id="security-title">What leaves, and who can mint</h2>
         </div>
         <div class="section-body">
+          <p class="claim">
+            The boundary sits where ambiguity ends: nothing ambiguous leaves the
+            machine, and nothing that leaves needs a person again.
+          </p>
+
           <figure class="diagram">
             <img
               src="assets/security-boundaries.svg"
-              alt="Placeholder for the security boundaries diagram"
+              alt="Credential sources converge into one loader, then into an Authorization header. The admin token is compared in constant time in the Worker; the user token is hashed with a pepper and looked up in D1. A revoked row returns 401."
               width="960"
               height="540"
             >
-            <figcaption>Tokens, trust boundaries, and repository split.</figcaption>
+            <figcaption>
+              One path from credential to header. Two ways to verify it, for two
+              different jobs.
+            </figcaption>
           </figure>
-          <p class="placeholder">Content pending.</p>
+
+          <div class="table-wrap">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th scope="col">Payload</th>
+                  <th scope="col">Direction</th>
+                  <th scope="col">When</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>Page renders and a prompt</td><td>This machine to DeepSeek</td><td><code>build</code> only</td></tr>
+                <tr><td>Approved profile bytes</td><td>This machine to Cloudflare</td><td><code>publish</code></td></tr>
+                <tr><td>Metadata and profile bytes</td><td>Cloudflare to this machine</td><td><code>pull</code>, family lookup</td></tr>
+                <tr><td>PDFs, databases, extracted values</td><td>Nowhere</td><td>Never</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>
+            Credentials come from the environment as a pair, or from a credentials
+            file as a pair. A URL and token always come from the same place: one
+            environment variable without the other is an error, and an environment
+            URL is never paired with a token from a file. Plain HTTP is allowed only
+            for loopback. Redirects are refused outright, so a bearer token cannot be
+            forwarded to another host.
+          </p>
+          <p>
+            Two token kinds, two jobs. The admin token is a Worker secret compared in
+            constant time; it can publish, move the current pointer, and manage
+            tokens. A user token looks like <code>unpdf_</code> plus 64 hex
+            characters, is shown once, and is stored only as
+            <code>HMAC-SHA256(pepper, token)</code>. Revoking one token does not
+            affect any other; changing the pepper invalidates all of them.
+          </p>
+          <div class="note">
+            <strong>The honest limit.</strong> The SHA-256 chain proves that the bytes
+            a client received are the bytes the catalog describes. It does not prove
+            that the registry is honest; that rests on TLS and on who holds the admin
+            token.
+          </div>
+          <p class="small">
+            This page follows its own rule: no registry hostname, no token, no real
+            profile content, no customer data. Nothing here would need redaction if
+            the repository became public.
+          </p>
+        </div>
+      </section>
+
+      <section id="failures" class="section" aria-labelledby="failures-title">
+        <div class="section-head">
+          <p class="eyebrow">07</p>
+          <h2 id="failures-title">Exit codes and whose job it is</h2>
+        </div>
+        <div class="section-body">
+          <p class="claim">
+            A code tells a script what happened. The reason tells a person what to do.
+          </p>
+
+          <div class="table-wrap">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th scope="col">Code</th>
+                  <th scope="col">Meaning</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>0</td><td>clean: every field accepted</td></tr>
+                <tr><td>1</td><td>nothing to do, or a usage or setup mistake</td></tr>
+                <tr><td>2</td><td>review needed: at least one field needs a person</td></tr>
+                <tr><td>3</td><td>at least one PDF could not be read, or the registry failed</td></tr>
+                <tr><td>4</td><td>a PDF was quarantined, or the profile is not approved</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>
+            3 wins over 4, and 4 wins over 2. Documents that did pass are still saved.
+          </p>
+          <p>
+            Code 1 sits outside that chain: it means nothing ran, or nothing needed to
+            run. Command-line parsing deliberately exits 1 instead of argparse's
+            default 2, so that 2 only ever means "a human should look at a value".
+          </p>
+
+          <div class="table-wrap">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th scope="col">Message</th>
+                  <th scope="col">Code</th>
+                  <th scope="col">First move</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><code>Unknown profile 'x'.</code></td><td>1</td><td>Check the name, or set registry credentials to download it</td></tr>
+                <tr><td><code>No PDFs in ...</code></td><td>1</td><td>Point the command at the folder that holds the PDFs</td></tr>
+                <tr><td><code>Folder not found: ...</code></td><td>1</td><td>Fix the path; nothing was read</td></tr>
+                <tr><td><code>No database at ...</code></td><td>1</td><td><code>check</code> needs a database from an earlier <code>run</code></td></tr>
+                <tr><td><code>Family 'x' has N approved profile(s)...</code></td><td>1</td><td>Pull the missing members</td></tr>
+                <tr><td><code>Profile 'x' is not approved.</code></td><td>4</td><td>Approve it, or select a different profile</td></tr>
+                <tr><td><code>quarantine &lt;file&gt;: expected N page(s), found M</code></td><td>4</td><td>The folder and the profile disagree</td></tr>
+                <tr><td><code>quarantine &lt;file&gt;: no profile subtype matched</code></td><td>4</td><td>No family member describes this document</td></tr>
+                <tr><td><code>quarantine &lt;file&gt;: matched more than one profile</code></td><td>4</td><td>Tighten a match rule</td></tr>
+                <tr><td><code>Registry rejected the token...</code></td><td>3</td><td>Check the token, or issue a new one</td></tr>
+                <tr><td><code>Profile hash mismatch...</code></td><td>3</td><td>Retry the pull; do not use the file</td></tr>
+                <tr><td><code>Duplicate PDF file names in ...</code></td><td>1</td><td>Rename the files; nothing was read</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>
+            Three unhappy states, three owners:
+            <code>review</code> means a person reads one field;
+            <code>quarantine</code> means the folder or the profile is wrong;
+            <code>failed</code> means the file or the tool could not do its job.
+          </p>
+        </div>
+      </section>
+
+      <section id="decisions" class="section" aria-labelledby="decisions-title">
+        <div class="section-head">
+          <p class="eyebrow">08</p>
+          <h2 id="decisions-title">Rules worth keeping</h2>
+        </div>
+        <div class="section-body">
+          <p class="claim">
+            Each of these rules was chosen over an obvious alternative. The cost is
+            real; it is listed next to the rule.
+          </p>
+
+          <div class="table-wrap">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th scope="col">Rule</th>
+                  <th scope="col">Rejected alternative</th>
+                  <th scope="col">Cost accepted</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>A profile is data, not code</td><td>One parser per document type</td><td>A new type needs a rebuild, not a patch</td></tr>
+                <tr><td>No model at extraction time</td><td>An LLM reading each PDF</td><td>Recall is bounded by the boxes and anchors a human approved</td></tr>
+                <tr><td>Anchors and field boxes</td><td>Whole-page regexes</td><td>One profile per page geometry</td></tr>
+                <tr><td>Refuse instead of guessing</td><td>Best-effort partial extraction</td><td>Exit 4 stays until the quarantine is resolved</td></tr>
+                <tr><td>Immutable versions and a current pointer</td><td>A mutable "latest"</td><td>Clients keep stale copies until they pull</td></tr>
+                <tr><td>Select by name, never by path</td><td>Any JSON file as a profile</td><td>Profiles must live in the profile root</td></tr>
+                <tr><td>One SQLite file per job</td><td>A shared server database</td><td>No concurrent writers, no cross-machine queries</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="note">
+            <strong>Known trade-off.</strong> Publish writes the KV artifact before
+            the D1 catalog row. If the catalog write fails, the object is orphaned but
+            unreachable; a retry converges and nothing reads the stray bytes.
+          </div>
         </div>
       </section>
 
       <section id="operations" class="section" aria-labelledby="operations-title">
         <div class="section-head">
-          <p class="eyebrow">08</p>
-          <h2 id="operations-title">Operations</h2>
-        </div>
-        <div class="section-body">
-          <p class="placeholder">Content pending.</p>
-        </div>
-      </section>
-
-      <section id="glossary" class="section" aria-labelledby="glossary-title">
-        <div class="section-head">
           <p class="eyebrow">09</p>
-          <h2 id="glossary-title">Glossary</h2>
+          <h2 id="operations-title">The runnable contract</h2>
         </div>
         <div class="section-body">
-          <p class="placeholder">Content pending.</p>
+          <p class="claim">
+            The commands are few, and the deploy has one gate that cannot be skipped
+            by accident.
+          </p>
+
+          <div class="table-wrap">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th scope="col">Command</th>
+                  <th scope="col">Changes</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><code>build NAME --samples DIR</code></td><td>Writes a draft, an overlay, and raw model responses</td></tr>
+                <tr><td><code>approve NAME</code></td><td>Writes the approved profile; strips telemetry</td></tr>
+                <tr><td><code>annotate NAME</code></td><td>Sets family and match metadata</td></tr>
+                <tr><td><code>publish NAME</code></td><td>Uploads bytes and moves the current pointer; <code>--dry-run</code> proves the digest</td></tr>
+                <tr><td><code>bump NAME --version X</code></td><td>Changes the local version only</td></tr>
+                <tr><td><code>rollback NAME --version X</code></td><td>Moves the current pointer to an existing version</td></tr>
+                <tr><td><code>token issue | list | revoke</code></td><td>Manages per-person read tokens</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>
+            Deployment is a manual dispatch that requires the word
+            <code>deploy</code>, runs both test suites, applies D1 migrations, and
+            only then deploys the Worker. The extractor is pinned by commit SHA in CI,
+            so a change in the public package reaches the registry deliberately, not
+            by drift.
+          </p>
+          <div class="note">
+            <strong>Not enforced by the workflow.</strong> The deploy file has no
+            branch filter. The real gate is the typed confirmation plus the protected
+            environment, so treat <code>main</code> as the only branch that should be
+            dispatched.
+          </div>
+
+          <div class="table-wrap">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th scope="col">Symptom</th>
+                  <th scope="col">First check</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>Exit 2</td><td><code>SELECT file, field, status, reason FROM review;</code></td></tr>
+                <tr><td>Exit 4</td><td><code>SELECT file, reason, page, details FROM quarantine;</code> then the JSON in <code>.unpdf/quarantine</code></td></tr>
+                <tr><td>Exit 3</td><td>The last <code>error</code> or <code>quarantine</code> line names the failing file</td></tr>
+                <tr><td>Registry 401 or 403</td><td><code>token list</code>: check revoked state and last use</td></tr>
+                <tr><td>Publish 409</td><td><code>bump</code> the version, then publish again</td></tr>
+                <tr><td>Stale profile</td><td>Delete the cached name folder and pull again</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
-      <section id="links" class="section" aria-labelledby="links-title">
+      <section id="terms" class="section" aria-labelledby="terms-title">
         <div class="section-head">
-          <p class="eyebrow">10</p>
-          <h2 id="links-title">Links</h2>
+          <p class="eyebrow">Terms</p>
+          <h2 id="terms-title">Six words that get mixed up</h2>
         </div>
         <div class="section-body">
-          <p class="placeholder">Repository links pending.</p>
+          <div class="table-wrap">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th scope="col">Term</th>
+                  <th scope="col">Means</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>draft</td><td>A proposal with telemetry, not yet approved</td></tr>
+                <tr><td>current version</td><td>The version the registry serves; a pointer, not a copy</td></tr>
+                <tr><td>cached profile</td><td>One version on this machine; replaced by the next pull</td></tr>
+                <tr><td>snapshot</td><td>The contract copy written into <code>.unpdf/</code> for the database</td></tr>
+                <tr><td>fingerprint</td><td>A hash of the contract used to warn about profile drift</td></tr>
+                <tr><td>SHA-256</td><td>A hash of the exact published bytes, checked on publish and pull</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
     </main>
 
     <footer class="site-footer">
       <div class="shell footer-inner">
-        <p>© 2026 Mohammed Baqadir</p>
+        <p>unpdf-extractor is public; unpdf-profiler and the registry are private.</p>
         <p>
-          Documentation licensed under
+          © 2026 Mohammed Baqadir. Documentation licensed under
           <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.
         </p>
       </div>
