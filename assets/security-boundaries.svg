@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-labelledby="title desc">
+  <title id="title">Security boundaries diagram placeholder</title>
+  <desc id="desc">Placeholder frame for the unpdf security boundaries diagram.</desc>
+  <rect width="960" height="540" fill="#f5f0e6"/>
+  <rect x="24" y="24" width="912" height="492" rx="18" fill="#fffdf8" stroke="#d8d0c0" stroke-width="2"/>
+  <rect x="48" y="48" width="864" height="444" rx="12" fill="none" stroke="#bdb3a1" stroke-width="2" stroke-dasharray="10 10"/>
+  <text x="72" y="88" fill="#a8532f" font-family="ui-monospace, Consolas, monospace" font-size="14" font-weight="700" letter-spacing="3">PLACEHOLDER</text>
+  <text x="480" y="264" text-anchor="middle" fill="#1d2b2a" font-family="Georgia, serif" font-size="34" font-weight="700">Security boundaries</text>
+  <text x="480" y="300" text-anchor="middle" fill="#5d6b68" font-family="system-ui, sans-serif" font-size="16">Diagram content pending</text>
+</svg>
